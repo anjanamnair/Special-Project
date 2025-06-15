@@ -1,0 +1,185 @@
+using Lucene.Net.Search;
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using VDS.RDF;
+using VDS.RDF.Parsing;
+using VDS.RDF.Query;
+using VDS.RDF.Update;
+using VDS.RDF.Writing;
+class TcpServerAndClient
+{
+
+    // Define a class to represent a target system
+    class TargetSystem
+    {
+        public string IpAddress { get; }
+        public int Port { get; }
+
+        public TargetSystem(string ipAddress, int port)
+        {
+            IpAddress = ipAddress;
+            Port = port;
+        }
+    }
+    static void Main()
+    {
+        // Server configuration
+        //IPAddress serverIpAddress = IPAddress.Parse("172.21.12.138");
+        //int serverPort = 65068;
+
+        // Start the server to receive the SPARQL queries
+        //ReceiveQueriesAndUpdateRdf(serverIpAddress, serverPort);
+
+        // Additional logic or code as needed
+        //Console.WriteLine("Server execution completed.");
+
+        // Define a linked list of target systems
+        LinkedList<TargetSystem> targetSystems = new LinkedList<TargetSystem>();
+
+        // Add target systems with their IP addresses and ports
+        //targetSystems.AddLast(new TargetSystem("172.21.12.138", 65068));
+        targetSystems.AddLast(new TargetSystem("172.21.3.118", 53371));
+        targetSystems.AddLast(new TargetSystem("172.21.14.19", 63456));
+
+        // Start the server to receive the SPARQL queries
+        ReceiveQueriesAndUpdateRdf("172.21.7.28", 65512);
+
+        // Iterate through each target system and send SPARQL queries
+        foreach (var targetSystem in targetSystems)
+        {
+
+            SendMessageToServer(targetSystem.IpAddress, targetSystem.Port, "Query updated successfully");
+            
+            // Additional logic or code as needed
+            Console.WriteLine($"Queries sent to {targetSystem.IpAddress}:{targetSystem.Port}. Query updated in RDF Database successfully");
+        }
+
+        Console.WriteLine("Server execution completed.");
+
+    }
+
+    static void SendMessageToServer(string serverIpAddress, int port, string message)
+    {
+        using (TcpClient client = new TcpClient(serverIpAddress, port))
+        {
+            Console.WriteLine("Connected to server.");
+
+            using (NetworkStream networkStream = client.GetStream())
+            {
+                byte[] data = Encoding.UTF8.GetBytes(message);
+                networkStream.Write(data, 0, data.Length);
+
+                Console.WriteLine("Sent message to server: " + message);
+            }
+        }
+    }
+
+
+    static void ReceiveQueriesAndUpdateRdf(string ipAddress, int port)
+    {
+        TcpListener tcpListener = null;
+        TcpClient tcpClient = null;
+
+        try
+        {
+            // Start TcpListener
+            tcpListener = new TcpListener(IPAddress.Parse(ipAddress), port);
+            tcpListener.Start();
+
+            Console.WriteLine($"Server is listening on port {port}");
+
+            // Accept the client connection
+            tcpClient = tcpListener.AcceptTcpClient();
+            Console.WriteLine("Client connected");
+
+            // Get the network stream
+            NetworkStream networkStream = tcpClient.GetStream();
+
+            // Receive the SPARQL queries as a string
+            string receivedQueries;
+            using (StreamReader reader = new StreamReader(networkStream))
+            {
+                receivedQueries = reader.ReadToEnd();
+            }
+
+            // Print the received SPARQL queries
+            Console.WriteLine("Received SPARQL queries:");
+            Console.WriteLine(receivedQueries);
+
+            // Process SPARQL queries and update RDF file
+            UpdateRdfFileWithQueries(receivedQueries, "C:\\Users\\selva\\OneDrive\\Desktop\\Project\\wall-standard-case.ttl");
+
+            Console.WriteLine("RDF file updated successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error for {ipAddress}:{port}: {ex.Message}");
+        }
+        finally
+        {
+            // Close the TcpListener and TcpClient
+            tcpListener?.Stop();
+            tcpClient?.Close();
+        }
+    }
+
+
+    static void UpdateRdfFileWithQueries(string sparqlQueries, string rdfFilePath)
+    {
+        try
+        {
+            // Load RDF file
+            IGraph rdfGraph = new Graph();
+            FileLoader.Load(rdfGraph, rdfFilePath);
+
+            // Print RDF content before update
+            Console.WriteLine("RDF content before update:");
+
+            // Use dotNetRDF library to execute SPARQL queries and update the RDF graph
+            TripleStore tripleStore = new TripleStore();
+            tripleStore.Add(rdfGraph, true);
+
+            LeviathanUpdateProcessor processor = new LeviathanUpdateProcessor(tripleStore);
+
+            // Parse the SPARQL queries from the string
+            SparqlUpdateParser parser = new SparqlUpdateParser();
+            SparqlUpdateCommandSet updateCommandSet = parser.ParseFromString(sparqlQueries);
+
+            // Execute each command individually
+            foreach (var updateCommand in updateCommandSet.Commands)
+            {
+                processor.ProcessCommand(updateCommand);
+            }
+
+            // Save updated RDF graph to the file in Turtle format
+            using (var writer = new StreamWriter("C:\\Users\\selva\\OneDrive\\Desktop\\Project\\wall-standard-case-updated.ttl"))
+            {
+                rdfGraph.SaveToStream(writer, new CompressingTurtleWriter());
+            }
+
+            // Print RDF content after update
+            Console.WriteLine("RDF content after update:");
+
+            Console.WriteLine($"RDF file updated successfully: {"C:\\Users\\selva\\OneDrive\\Desktop\\Project\\wall-standard-case-updated.ttl"}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error updating RDF file: {ex.Message}");
+        }
+    }
+
+
+    static void PrintTriples(IEnumerable<Triple> triples)
+    {
+        foreach (var triple in triples)
+        {
+            Console.WriteLine($"Subject: {triple.Subject}   Predicate: {triple.Predicate}   Object: {triple.Object}");
+        }
+    }
+
+}

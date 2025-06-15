@@ -1,0 +1,142 @@
+using System.Collections;
+using System;
+using System.Linq;
+using UnityEngine;
+using Xbim.Ifc;
+using Xbim.Ifc4.GeometricConstraintResource;
+using Xbim.Ifc4.GeometryResource;
+using Xbim.Ifc4.SharedBldgElements;
+using Xbim.Ifc4.RepresentationResource;
+using Xbim.Ifc4.GeometricModelResource;
+
+
+
+public class Wall : MonoBehaviour
+{
+   
+    string filePath;
+
+   //public string ifcFilePath = @"D:\PROJECT\Test\Assets\StreamingAssets";
+    private IfcStore model;
+    private GameObject wallGameObject;
+
+    // Start is called before the first frame update
+    void Start()
+    {
+        string fileName = "SampleHouse4.ifc";
+        string filePath = System.IO.Path.Combine(Application.streamingAssetsPath, "SampleHouse4.ifc");
+        Debug.Log("Checking file existence: " + System.IO.File.Exists(filePath));
+
+        //filePath = System.IO.Path.Combine(Application.streamingAssetsPath, fileName);
+        StartCoroutine(LoadIFCModel(fileName));
+    }
+
+    private IEnumerator LoadIFCModel(string fileName)
+    {
+        string filePath = System.IO.Path.Combine(Application.streamingAssetsPath, fileName);
+
+
+        Debug.Log("Constructed file path: " + filePath);
+        if (!System.IO.File.Exists(filePath))
+        {
+            Debug.LogError("IFC file does not exist at: " + filePath);
+            yield break;
+        }
+
+        model = IfcStore.Open(filePath);
+        
+
+        var wallToMove = model.Instances.OfType<Xbim.Ifc4.SharedBldgElements.IfcWall>().FirstOrDefault();
+
+        if (wallToMove != null)
+        {
+            using (var txn = model.BeginTransaction("ModifyWallProperties"))
+            {
+                
+                wallToMove.Name = "New Wall Name";
+
+                txn.Commit(); // Commit the transaction after making changes
+            }
+
+            using (var txn = model.BeginTransaction("ModifyWallGeometry"))
+            {
+                // Assuming the wall has a Representation property
+                var representation = wallToMove.Representation as IfcProductDefinitionShape;
+                if (representation != null)
+                {
+                   
+                    var extrudedSolid = model.Instances.New<IfcExtrudedAreaSolid>(e =>
+                    {
+                        e.Depth = 3.0;  // Set the depth of the extrusion
+                        
+                    });
+
+                    
+                    var shapeRepresentation = model.Instances.New<IfcShapeRepresentation>(r =>
+                    {
+                        r.RepresentationType = "Brep"; 
+                        r.ContextOfItems = model.Instances.OfType<IfcGeometricRepresentationContext>().FirstOrDefault();
+                        r.Items.Add(extrudedSolid);
+                    });
+
+                    // Update the representation with the modified shape
+                    representation.Representations.Add(shapeRepresentation);
+                    Debug.Log("Geometry modification applied");
+                }
+
+                txn.Commit(); // Commit the transaction after making changes
+            }
+
+            MoveWall(wallToMove, new UnityEngine.Vector3(1.0f, 0.0f, 0.0f));
+
+            model.SaveAs(filePath);
+            Debug.Log("Name changed successfully!");
+            Debug.Log("Wall moved successfully!");
+            Debug.Log("Geometry changed successfully!");
+        }
+        else
+        {
+            Debug.LogError("No wall found in the IFC model");
+        }
+    }
+
+    private void MoveWall(IfcWall wall, UnityEngine.Vector3 newPosition)
+    {
+        using (var txn = model.BeginTransaction("MoveWall"))
+        {
+            var placement = wall.ObjectPlacement as IfcLocalPlacement;
+
+            if (placement != null)
+            {
+                // Cast RelativePlacement to IfcAxis2Placement3D
+                var relativePlacement = placement.RelativePlacement as IfcAxis2Placement3D;
+
+                // Check if the cast was successful
+                if (relativePlacement != null)
+                {
+                    // Modify the Location property
+                    relativePlacement.Location = model.Instances.New<IfcCartesianPoint>(p =>
+                    {
+                        p.SetXYZ(newPosition.x, newPosition.y, newPosition.z);
+                    });
+                }
+                else
+                {
+                    Debug.LogError("Unable to cast RelativePlacement to IfcAxis2Placement3D");
+                }
+            }
+
+            txn.Commit();
+        }
+    }
+
+
+
+    void OnDestroy()
+    {
+        if (model != null)
+        {
+            model.Close();
+        }
+    }
+}

@@ -1,0 +1,394 @@
+using System;
+using System.Xml.Linq;
+using VDS.RDF;
+using VDS.RDF.Parsing;
+using VDS.RDF.Query;
+using VDS.RDF.Query.Datasets;
+using VDS.RDF.Update;
+using VDS.RDF.Writing;
+using VDS.RDF.Writing.Formatting;
+
+class RdfTest
+{
+    //private static LeviathanQueryProcessor queryProcessor = new LeviathanQueryProcessor(null);
+
+    static void Main()
+    {
+        // Load RDF data
+        IGraph g = new Graph();
+        FileLoader.Load(g, "C:\\Users\\selva\\Downloads\\wall-standard-case-100.ttl");
+        GraphCollection gCollection = new GraphCollection();
+        gCollection.Add(g, true);
+        TripleStore tripStore;
+        tripStore = new TripleStore(gCollection);
+
+        // Initialize query processor
+
+        SparqlQueryParser queryParser = new SparqlQueryParser();
+        SparqlUpdateParser updateParser = new SparqlUpdateParser();
+        LeviathanQueryProcessor queryProcessor = new LeviathanQueryProcessor(tripStore);
+        LeviathanUpdateProcessor updateProcessor = new LeviathanUpdateProcessor(tripStore);
+        NTriplesFormatter formatter = new NTriplesFormatter();
+        string wallId = "0czCsOQ5z4dg8QGBRFInu2";
+        string wallName = "NewWallName";
+        string newWallId = "9c44ef7d64d0418cbaf0765379b9d9be";
+
+        // Read data using SPARQL query
+        ReadData(queryParser, formatter, queryProcessor);
+
+
+        // Update 1 - Set the name of a wall
+        UpdateWallName(wallId, wallName, updateParser, updateProcessor, formatter, queryProcessor);
+
+        // Update 2 - Add a new wall
+        AddNewWall(newWallId, updateParser, updateProcessor, formatter, queryProcessor);
+
+        // Update 3 - Add owner history to a project
+        AddOwnerHistory(updateParser, updateProcessor, formatter, queryProcessor);
+
+        // Update 4 - Add a new property set and property
+        AddPropertySetAndProperty(updateParser, updateProcessor, formatter, queryProcessor);
+    }
+
+    private static void ReadData(SparqlQueryParser queryParser, NTriplesFormatter formatter, LeviathanQueryProcessor queryProcessor)
+    {
+        string queryString = "PREFIX express:  <https://w3id.org/express#>\r\n" +
+            "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#>\r\n" +
+            "SELECT ?wall " +
+            "WHERE {?wall ifc:globalId_IfcRoot ?id. " +
+            "       ?id express:hasString \"0czCsOQ5z4dg8QGBRFInu2\"}";
+        SparqlQuery query = queryParser.ParseFromString(queryString);
+
+        SparqlResultSet results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Create an XML document to store the results with metadata
+        XDocument xmlDocumentBeforeUpdate = new XDocument(
+            new XElement("Results",
+                new XElement("Metadata",
+                    new XElement("Timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")),
+                    new XElement("Author", "User123")
+                ),
+                new XElement("QueryResultsBeforeUpdate",
+                    results.Select(t =>
+                        new XElement("QueryResult",
+                            new XElement("BeforeUpdate", t.ToString(formatter))
+                        )
+                    )
+                )
+            )
+        );
+
+        // Print the XML document to the console
+        Console.WriteLine(xmlDocumentBeforeUpdate);
+
+        // Convert the XML document to a string
+        string xmlString = xmlDocumentBeforeUpdate.ToString();
+
+        // Deserialize the XML string back to an XDocument
+        XDocument deserializedXmlDocument = XDocument.Parse(xmlString);
+
+        // Access metadata from the deserialized XML
+        string timestamp = deserializedXmlDocument.Descendants("Timestamp").First().Value;
+        string author = deserializedXmlDocument.Descendants("Author").First().Value;
+
+        // Print metadata to the console
+        Console.WriteLine($"Timestamp: {timestamp}");
+        Console.WriteLine($"Author: {author}");
+    }
+
+
+    private static void UpdateWallName(string wallId, string wallName, SparqlUpdateParser updateParser, LeviathanUpdateProcessor updateProcessor, NTriplesFormatter formatter, LeviathanQueryProcessor queryProcessor)
+    {
+        string updateString = @"PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#>
+                 PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/>
+                 PREFIX express:  <https://w3id.org/express#>
+
+                 INSERT {
+                     ?wall ifc:name_IfcRoot inst:IfcLabel_1337 ;
+                           ifc:globalId_IfcRoot ?id.
+                     ?label express:hasString """ + wallName + @""".
+                 }
+                 WHERE {
+                     ?wall ifc:globalId_IfcRoot ?id.
+                     ?id express:hasString """ + wallId + @""".
+                     OPTIONAL { ?wall ifc:name_IfcRoot ?label. }
+                 }";
+        SparqlUpdateCommandSet updateCommand = updateParser.ParseFromString(updateString);
+
+        updateProcessor.ProcessCommandSet(updateCommand);
+
+        // Test if the update was performed correctly
+        string queryString = "PREFIX express:  <https://w3id.org/express#> " +
+                            "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                            "SELECT ?wallId ?wallName " +
+                            "WHERE { " +
+                                "?wall ifc:globalId_IfcRoot ?id. " +
+                                "?id express:hasString \"0czCsOQ5z4dg8QGBRFInu2\". " +
+                                "?wall ifc:globalId_IfcRoot ?wallId. " +
+                                "?wall ifc:name_IfcRoot ?wallName.}";
+        SparqlQueryParser queryParser = new SparqlQueryParser();
+        SparqlQuery query = queryParser.ParseFromString(queryString);
+        SparqlResultSet results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Create an XML document to store the results with metadata
+        XDocument xmlDocumentAfterUpdate1 = new XDocument(
+            new XElement("Results",
+                new XElement("Metadata",
+                    new XElement("Timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")),
+                    new XElement("Author", "User123")
+                ),
+                new XElement("QueryResultsAfterUpdate1",
+                    results.Select(t =>
+                        new XElement("QueryResult",
+                            new XElement("AfterUpdate", t.ToString(formatter))
+                        )
+                    )
+                )
+            )
+        );
+
+        // Print the XML document to the console
+        Console.WriteLine(xmlDocumentAfterUpdate1);
+
+        // Convert the XML document to a string
+        string xmlString = xmlDocumentAfterUpdate1.ToString();
+
+        // Deserialize the XML string back to an XDocument
+        XDocument deserializedXmlDocument = XDocument.Parse(xmlString);
+
+        // Access metadata from the deserialized XML
+        string timestamp = deserializedXmlDocument.Descendants("Timestamp").First().Value;
+        string author = deserializedXmlDocument.Descendants("Author").First().Value;
+
+        // Print metadata to the console
+        Console.WriteLine($"Timestamp: {timestamp}");
+        Console.WriteLine($"Author: {author}");
+    }
+
+    private static void AddNewWall(string newWallId, SparqlUpdateParser updateParser, LeviathanUpdateProcessor updateProcessor, NTriplesFormatter formatter, LeviathanQueryProcessor queryProcessor)
+    {
+        string updateString = $@"PREFIX ifc: <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#>
+                   PREFIX inst: <http://linkedbuildingdata.net/ifc/resources20200624_184152/>
+                   INSERT  {{
+                       inst:{newWallId} a ifc:IfcWallStandardCase ;
+                       ifc:name_IfcRoot inst:IfcLabel_{Guid.NewGuid()} ;
+                       ifc:globalId_IfcRoot inst:{newWallId} .
+                       inst:{newWallId} ifc:ownerHistory_IfcRoot inst:NewOwnerHistory .
+                   }}
+                   WHERE {{
+                       OPTIONAL {{ ?wall ifc:name_IfcRoot ?label. }}
+                   }}";
+        SparqlUpdateCommandSet updateCommand = updateParser.ParseFromString(updateString);
+
+        updateProcessor.ProcessCommandSet(updateCommand);
+
+        // Test if the second update was performed correctly
+        string queryString = "PREFIX express:  <https://w3id.org/express#> " +
+             "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+             "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+            "SELECT ?newWallId ?wallName  " +
+             "WHERE { " +
+             "?wall ifc:globalId_IfcRoot ?id. " +
+             "?wall ifc:globalId_IfcRoot inst:" + newWallId + ". " +
+             "?wall ifc:globalId_IfcRoot ?newWallId. " +
+             "?wall ifc:name_IfcRoot ?wallName.}";
+
+        SparqlQueryParser queryParser = new SparqlQueryParser();
+        SparqlQuery query = queryParser.ParseFromString(queryString);
+        SparqlResultSet results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Create an XML document to store the results with metadata
+        XDocument xmlDocumentAfterUpdate2 = new XDocument(
+            new XElement("Results",
+                new XElement("Metadata",
+                    new XElement("Timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")),
+                    new XElement("Author", "User123")
+                ),
+                new XElement("QueryResultsAfterUpdate2",
+                    results.Select(t =>
+                        new XElement("QueryResult",
+                            new XElement("AfterUpdate", t.ToString(formatter))
+                        )
+                    )
+                )
+            )
+        );
+
+        // Print the XML document to the console
+        Console.WriteLine("Query Result after update 2:");
+        Console.WriteLine(xmlDocumentAfterUpdate2);
+
+        // Convert the XML document to a string
+        string xmlString = xmlDocumentAfterUpdate2.ToString();
+
+        // Deserialize the XML string back to an XDocument
+        XDocument deserializedXmlDocument = XDocument.Parse(xmlString);
+
+        // Access metadata from the deserialized XML
+        string timestamp = deserializedXmlDocument.Descendants("Timestamp").First().Value;
+        string author = deserializedXmlDocument.Descendants("Author").First().Value;
+
+        // Print metadata to the console
+        Console.WriteLine($"Timestamp: {timestamp}");
+        Console.WriteLine($"Author: {author}");
+    }
+
+
+
+    private static void AddOwnerHistory(SparqlUpdateParser updateParser, LeviathanUpdateProcessor updateProcessor, NTriplesFormatter formatter, LeviathanQueryProcessor queryProcessor)
+    {
+        string updateString = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                              "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources/20240108_103400/> " +
+                              "PREFIX express:  <https://w3id.org/express#> " +
+                              "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> " +
+                              "INSERT DATA { " +
+                              "inst:IfcProject_100 ifc:ownerHistory_IfcRoot inst:IfcOwnerHistory_New . " +
+                              "inst:IfcOwnerHistory_New a ifc:IfcOwnerHistory ; " +
+                              "ifc:owningUser_IfcOwnerHistory inst:IfcPersonAndOrganization_3 ; " +
+                              "ifc:owningApplication_IfcOwnerHistory inst:IfcApplication_1 ; " +
+                              "ifc:changeAction_IfcOwnerHistory ifc:ADDED . " +
+                              "}";
+        SparqlUpdateCommandSet updateCommand = updateParser.ParseFromString(updateString);
+
+        updateProcessor.ProcessCommandSet(updateCommand);
+
+        // Test if the third update was performed correctly
+        string queryString = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> " +
+            "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+            "PREFIX express:  <https://w3id.org/express#> " +
+            "SELECT ?ownerHistory ?owningUser ?owningApplication ?changeAction " +
+            "WHERE { " +
+            "inst:IfcProject_100 ifc:ownerHistory_IfcRoot ?ownerHistory . " +
+            "?ownerHistory rdf:type ifc:IfcOwnerHistory ; " +
+            "              ifc:owningUser_IfcOwnerHistory ?owningUser ; " +
+            "              ifc:owningApplication_IfcOwnerHistory ?owningApplication ; " +
+            "              ifc:changeAction_IfcOwnerHistory ?changeAction . " +
+            "}";
+        SparqlQueryParser queryParser = new SparqlQueryParser();
+        SparqlQuery query = queryParser.ParseFromString(queryString);
+        SparqlResultSet results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Create an XML document to store the results with metadata
+        XDocument xmlDocumentAfterUpdate3 = new XDocument(
+            new XElement("Results",
+                new XElement("Metadata",
+                    new XElement("Timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")),
+                    new XElement("Author", "User123")
+                ),
+                new XElement("QueryResultsAfterUpdate3",
+                    results.Select(t =>
+                        new XElement("QueryResult",
+                            new XElement("AfterUpdate3", t.ToString(formatter))
+                        )
+                    )
+                )
+            )
+        );
+
+        Console.WriteLine("Query Result after update 3:");
+        Console.WriteLine(xmlDocumentAfterUpdate3);
+
+        // Convert the XML document to a string
+        string xmlString = xmlDocumentAfterUpdate3.ToString();
+
+        // Deserialize the XML string back to an XDocument
+        XDocument deserializedXmlDocument = XDocument.Parse(xmlString);
+
+        // Access metadata from the deserialized XML
+        string timestamp = deserializedXmlDocument.Descendants("Timestamp").First().Value;
+        string author = deserializedXmlDocument.Descendants("Author").First().Value;
+
+        // Print metadata to the console
+        Console.WriteLine($"Timestamp: {timestamp}");
+        Console.WriteLine($"Author: {author}");
+    }
+
+
+
+    private static void AddPropertySetAndProperty(SparqlUpdateParser updateParser, LeviathanUpdateProcessor updateProcessor, NTriplesFormatter formatter, LeviathanQueryProcessor queryProcessor)
+    {
+        string updateString = @"PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#>
+        PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/>
+        PREFIX express:  <https://w3id.org/express#>
+        PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+        PREFIX pset: <http://www.buildingsmart-tech.org/ifcOWL/IFC4/PSD#>
+
+        INSERT DATA {
+          inst:YourEntity ifc:hasPropertySets inst:YourPropertySet .
+          inst:YourPropertySet rdf:type ifc:IfcPropertySet ;
+                             ifc:globalId_IfcRoot inst:YourPropertySetID ;
+                             ifc:ownerHistory_IfcRoot inst:YourOwnerHistory ;
+                             ifc:name_IfcRoot ""YourPropertySet"" ;
+                             ifc:description_IfcProperty ""YourPropertySetDescription"" ;
+                             ifc:hasProperties inst:YourProperty .
+          inst:YourProperty rdf:type ifc:IfcPropertySingleValue ;
+                            ifc:globalId_IfcRoot inst:YourPropertyID ;
+                            ifc:ownerHistory_IfcRoot inst:YourOwnerHistory ;
+                            ifc:name_IfcRoot ""YourPropertyName"" ;
+                            ifc:description_IfcProperty ""YourPropertyDescription"" ;
+                            ifc:nominalValue_IfcProperty ""YourNominalValue"" .
+}";
+
+        SparqlUpdateCommandSet updateCommand = updateParser.ParseFromString(updateString);
+
+        updateProcessor.ProcessCommandSet(updateCommand);
+
+        string queryString = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+                "PREFIX express:  <https://w3id.org/express#> " +
+                "PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> " +
+                "PREFIX pset: <http://www.buildingsmart-tech.org/ifcOWL/IFC4/PSD#> " +
+                "SELECT ?propertySet ?propertySetID ?propertyName ?propertyDescription ?propertyID " +
+                "WHERE { " +
+                "  inst:YourEntity ifc:hasPropertySets ?propertySet . " +
+                "  ?propertySet rdf:type ifc:IfcPropertySet ; " +
+                "               ifc:globalId_IfcRoot ?propertySetID ; " +
+                "               ifc:hasProperties ?property . " +
+                "  ?property rdf:type ifc:IfcPropertySingleValue ; " +
+                "            ifc:name_IfcRoot ?propertyName ; " +
+                "            ifc:globalId_IfcRoot ?propertyID; " +
+                "            ifc:description_IfcProperty ?propertyDescription . " +
+                "}";
+
+        SparqlQueryParser queryParser = new SparqlQueryParser();
+        SparqlQuery query = queryParser.ParseFromString(queryString);
+        SparqlResultSet results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Create an XML document to store the results with metadata
+        XDocument xmlDocumentAfterUpdate4 = new XDocument(
+            new XElement("Results",
+                new XElement("Metadata",
+                    new XElement("Timestamp", DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss")),
+                    new XElement("Author", "User123")
+                ),
+                new XElement("QueryResultsAfterUpdate4",
+                    results.Select(t =>
+                        new XElement("QueryResult",
+                            new XElement("AfterUpdate4", t.ToString(formatter))
+                        )
+                    )
+                )
+            )
+        );
+
+        Console.WriteLine("Query Result after update 4:");
+        Console.WriteLine(xmlDocumentAfterUpdate4);
+
+        // Convert the XML document to a string
+        string xmlString = xmlDocumentAfterUpdate4.ToString();
+
+        // Deserialize the XML string back to an XDocument
+        XDocument deserializedXmlDocument = XDocument.Parse(xmlString);
+
+        // Access metadata from the deserialized XML
+        string timestamp = deserializedXmlDocument.Descendants("Timestamp").First().Value;
+        string author = deserializedXmlDocument.Descendants("Author").First().Value;
+
+        // Print metadata to the console
+        Console.WriteLine($"Timestamp: {timestamp}");
+        Console.WriteLine($"Author: {author}");
+    }
+
+
+}

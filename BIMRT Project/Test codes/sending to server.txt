@@ -1,0 +1,44 @@
+using System;
+using System.IO;
+using System.Net.Sockets;
+
+class TcpClientProgram
+{
+    static void Main()
+    {
+        TcpClient tcpClient = null;
+
+        try   
+        {
+            // Set the server IP address and port
+            string serverIpAddress = "172.21.3.249";
+            int port = 61206;
+
+            // Connect to the server
+            tcpClient = new TcpClient(serverIpAddress, port);
+
+            // Get the network stream
+            using (NetworkStream networkStream = tcpClient.GetStream())
+            {
+                // Choose the file to send
+                string filePath = Path.Combine("C:", "Users", "selva", "OneDrive", "Desktop", "Program.txt");
+
+                // Send the file
+                byte[] buffer = File.ReadAllBytes(filePath);
+                networkStream.Write(buffer, 0, buffer.Length);
+
+                Console.WriteLine("File sent successfully");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("Error: " + ex.Message);
+            // Consider logging the exception for better error handling
+        }
+        finally
+        {
+            // Close the TcpClient
+            tcpClient?.Close();
+        }
+    }
+}

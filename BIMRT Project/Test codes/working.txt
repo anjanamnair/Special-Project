@@ -1,0 +1,238 @@
+using System.IO;
+using UnityEngine;
+using Xbim.Ifc;
+using Xbim.Ifc4.Interfaces;
+using Xbim.Common;
+using System.Linq;
+using Xbim.Ifc4.Kernel;
+using System.Collections.Generic;
+using Xbim.Ifc4.GeometricConstraintResource;
+
+public class Wall<T> : MonoBehaviour where T : IfcObjectDefinition
+{
+    private IModel model;
+    public GameObject BuildingRoot;
+    private int count = 0;
+    private Dictionary<GameObject, T> elementDictionary = new Dictionary<GameObject, T>();
+
+    void Start()
+    {
+        LoadIFCModel();
+    }
+
+    private void Update()
+    {
+        if (count == 0)
+        {
+            LoadIFCModel();
+            count++;
+            Debug.Log("count" + count);
+        }
+    }
+
+    // Example usage: ModifyElement<IfcWall>("WallModified");
+    public void ModifyElement(string data)
+    {
+        using (var txn = model.BeginTransaction("ModifyElement"))
+        {
+            var elementToModify = model.Instances.OfType<T>().FirstOrDefault();
+            if (elementToModify != null)
+            {
+
+                elementToModify.Name = "Modified Element Name";
+                txn.Commit();
+            }
+        }
+
+        UpdateIFCAndUnity(data);
+    }
+
+    public void MoveElementInUnity(Vector3 newPosition, string data)
+    {
+        GameObject manipulationLogic = GameObject.FindGameObjectWithTag("IfcRoof");
+
+        if (manipulationLogic != null)
+        {
+            manipulationLogic.transform.position = newPosition;
+
+            if (elementDictionary.TryGetValue(manipulationLogic, out T elementToMove))
+            {
+                MoveElement(elementToMove, newPosition);
+            }
+            else
+            {
+                Debug.LogError($"Corresponding {typeof(T).Name} not found for the GameObject.");
+            }
+        }
+        else
+        {
+            Debug.LogError($"{typeof(T).Name} GameObject not found.");
+        }
+
+        UpdateIFCAndUnity(data);
+    }
+
+    private void VisualizeElement(T element)
+    {
+        Vector3 elementPosition = ConvertIfcToUnityPosition(element);
+
+        // Check if the GameObject already exists in the dictionary
+        if (elementDictionary.ContainsValue(element))
+        {
+            // Update the position of the existing GameObject
+            KeyValuePair<GameObject, T> kvp = elementDictionary.FirstOrDefault(x => x.Value.Equals(element));
+            GameObject existingGameObject = kvp.Key;
+            existingGameObject.transform.position = elementPosition;
+        }
+        else
+        {
+            // Instantiate a new GameObject to represent the IfcObjectDefinition
+            GameObject elementGameObject = InstantiateElementGameObject();
+            elementGameObject.transform.position = elementPosition;
+
+            // Add the GameObject and corresponding IfcObjectDefinition to the dictionary for future reference
+            elementDictionary[elementGameObject] = element;
+        }
+    }
+
+    private Vector3 ConvertIfcToUnityPosition(T element)
+    {
+        if (element is IIfcObjectPlacement objectPlacement)
+        {
+            // Check if PlacementRelTo is available in your IFC schema
+            if (objectPlacement is IIfcLocalPlacement localPlacement && localPlacement.PlacementRelTo != null)
+            {
+                // Assuming IIfcLocalPlacement has a property called PlacementRelTo
+                // Update the code based on the properties available in your IFC schema
+                // This is just an example, adapt it to your actual IFC schema
+                if (localPlacement.RelativePlacement is IIfcAxis2Placement3D axisPlacement)
+                {
+                    if (axisPlacement.Location is IIfcCartesianPoint location)
+                    {
+                        // Convert IfcCartesianPoint coordinates to Unity Vector3
+                        return new Vector3(
+                            (float)location.Coordinates[0],
+                            (float)location.Coordinates[1],
+                            (float)location.Coordinates[2]
+                        );
+                    }
+                }
+            }
+            else
+            {
+                // Handle the case where PlacementRelTo is not available or is null
+                Debug.LogError("PlacementRelTo is not available or is null in the IFC schema.");
+            }
+        }
+
+        // If the conversion cannot be performed or the data is missing, return a default position
+        return new Vector3(0.0f, 0.0f, 0.0f);
+    }
+
+    
+    private GameObject InstantiateElementGameObject()
+    {
+        // Implement logic to instantiate a new GameObject for the element
+        // For demonstration purposes, let's create a simple cube
+        return GameObject.CreatePrimitive(PrimitiveType.Cube);
+    }
+
+    private void UpdateUnityScene()
+    {
+        // Visualize changes in real time
+        var element = model.Instances.OfType<T>().FirstOrDefault();
+        if (element != null)
+        {
+            VisualizeElement(element);
+        }
+    }
+
+    private void LoadIFCModel()
+    {
+        if (BuildingRoot == null)
+        {
+            Debug.LogError("BuildingRoot is null. Please assign a GameObject to it in the Unity editor.");
+            return;
+        }
+        IfcProjectData project = BuildingRoot.GetComponent<IfcProjectData>();
+        if (project == null)
+        {
+            Debug.LogError("IfcProjectData component not found on BuildingRoot.");
+            return;
+        }
+        Debug.Log("Project value" + project);
+
+        model = project.IfcProject != null ? project.IfcProject.Model : null;
+        if (model == null)
+        {
+            Debug.LogError($"IfcProject or its Model property is null for {typeof(T).Name}.");
+            return;
+        }
+
+        MoveElementInUnity(new Vector3(1.0f, 0.0f, 0.0f), "New Element Name");
+
+        SaveIFCModel();
+        Debug.Log($"{typeof(T).Name} moved and modified successfully!");
+    }
+
+    private void MoveElement(T element, Vector3 newPosition)
+    {
+        using (var txn = model.BeginTransaction("MoveElement"))
+        {
+            if (element is IIfcObjectPlacement objectPlacement)
+            {
+                if (objectPlacement is IIfcLocalPlacement localPlacement && localPlacement.RelativePlacement != null)
+                {
+                    if (localPlacement.RelativePlacement is IIfcAxis2Placement3D axisPlacement)
+                    {
+                        if (axisPlacement.Location is IIfcCartesianPoint location)
+                        {
+                            // Set new position
+                            location.Coordinates[0] = newPosition.x;
+                            location.Coordinates[1] = newPosition.y;
+                            location.Coordinates[2] = newPosition.z;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                Debug.LogError($"Cannot move element. It does not implement IIfcObjectPlacement.");
+            }
+
+            txn.Commit();
+        }
+    }
+
+
+    // SaveIFCModel method to save the modified IFC model to a file
+    private void SaveIFCModel()
+    {
+        Debug.Log("Saving IFC model...");
+        using (var stream = new FileStream("SampleHouse4.ifc", FileMode.Create))
+        {
+            model.SaveAsIfc(stream);
+        }
+        Debug.Log("IFC model saved successfully.");
+    }
+
+
+    private void UpdateIFCAndUnity(string data)
+    {
+        UpdateUnityScene();
+        SaveIFCModel();
+        Debug.Log($"IFC and Unity updated successfully for {typeof(T).Name}!");
+
+        SendDataToClients(data);
+    }
+
+    private void SendDataToClients(string data)
+    {
+        ProcessReceivedData(data);
+    }
+
+    private void ProcessReceivedData(string data)
+    {
+        Debug.Log("Received data: " + data);
+    }
+}

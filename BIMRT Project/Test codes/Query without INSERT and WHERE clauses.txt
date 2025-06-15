@@ -1,0 +1,210 @@
+using VDS.RDF;
+using VDS.RDF.Parsing;
+using VDS.RDF.Query;
+using VDS.RDF.Update;
+using VDS.RDF.Writing.Formatting;
+using System;
+
+class RdfTest
+{
+    static void Main()
+    {
+        // Load RDF data
+        IGraph g = new Graph();
+        FileLoader.Load(g, "C:\\Users\\selva\\Downloads\\wall-standard-case-100.ttl");
+        GraphCollection gCollection = new GraphCollection();
+        gCollection.Add(g, true);
+        TripleStore tripStore = new TripleStore(gCollection);
+
+        // Define and execute SPARQL Query to read data
+        SparqlQueryParser queryParser = new SparqlQueryParser();
+        string queryString = "PREFIX express:  <https://w3id.org/express#>\r\n" +
+            "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#>\r\n" +
+            "SELECT ?wall " +
+            "WHERE {?wall ifc:globalId_IfcRoot ?id. " +
+            "       ?id express:hasString \"0czCsOQ5z4dg8QGBRFInu2\"}";
+        SparqlQuery query = queryParser.ParseFromString(queryString);
+
+        LeviathanQueryProcessor queryProcessor = new LeviathanQueryProcessor(tripStore);
+        SparqlResultSet results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Print out the Results
+        NTriplesFormatter formatter = new NTriplesFormatter();
+        foreach (ISparqlResult t in results)
+        {
+            Console.WriteLine("Query Result before update: " + t.ToString(formatter));
+        }
+
+        // Update a store: Set the name of a wall
+        SparqlUpdateParser updateParser = new SparqlUpdateParser();
+        string updateString1 = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                               "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+                               "PREFIX express:  <https://w3id.org/express#> " +
+                               "INSERT DATA { " +
+                               "  <http://linkedbuildingdata.net/ifc/resources20200624_184152/IfcWallStandardCase_302> " +
+                               "  ifc:name_IfcRoot <http://linkedbuildingdata.net/ifc/resources20200624_184152/IfcLabel_UpdatedName> " +
+                               "}";
+        SparqlUpdateCommandSet updateCommand1 = updateParser.ParseFromString(updateString1);
+
+        // Update processor
+        LeviathanUpdateProcessor updateProcessor = new LeviathanUpdateProcessor(tripStore);
+        updateProcessor.ProcessCommandSet(updateCommand1);
+
+        // Test if the update was performed correctly
+        queryString = "PREFIX express:  <https://w3id.org/express#> " +
+            "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+            "SELECT ?nameEnt " +
+            "WHERE { " +
+            "?wall ifc:globalId_IfcRoot ?id. " +
+            "?id express:hasString \"0czCsOQ5z4dg8QGBRFInu2\". " +
+            "?wall ifc:name_IfcRoot ?nameEnt.}";
+        query = queryParser.ParseFromString(queryString);
+        results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Print out result
+        foreach (ISparqlResult t in results)
+        {
+            Console.WriteLine("Query Result after update 1: " + t.ToString(formatter));
+        }
+
+        // Add a new wall
+        string updateString2 = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                               "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+                               "PREFIX express:  <https://w3id.org/express#> " +
+                               "INSERT DATA { " +
+                               "  inst:NewWall ifc:globalId_IfcRoot inst:NewWallID ;" +
+                               "               a ifc:IfcWallStandardCase ;" +
+                               "               ifc:name_IfcRoot \"New Wall Name\" ." +
+                               "}";
+        SparqlUpdateCommandSet updateCommand2 = updateParser.ParseFromString(updateString2);
+
+        // Update processor
+        updateProcessor.ProcessCommandSet(updateCommand2);
+
+        // Test if the second update was performed correctly
+        queryString = "PREFIX express:  <https://w3id.org/express#> " +
+            "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+            "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+            "SELECT ?nameEnt " +
+            "WHERE { " +
+            "?wall ifc:globalId_IfcRoot ?id. " +
+            "?wall ifc:globalId_IfcRoot inst:NewWallID. " +  // Use inst:NewWallID for the new wall
+            "?wall ifc:name_IfcRoot ?nameEnt.}";
+        query = queryParser.ParseFromString(queryString);
+        results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Print out result
+        foreach (ISparqlResult t in results)
+        {
+            Console.WriteLine("Query Result after update 2: " + t.ToString(formatter));
+        }
+
+        string updateString3 = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                       "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources/20240108_103400/> " +
+                       "PREFIX express:  <https://w3id.org/express#> " +
+                       "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> " +
+                       "INSERT DATA { " +
+
+                       "inst:IfcProject_100 ifc:ownerHistory_IfcRoot inst:IfcOwnerHistory_New . " +
+                       "inst:IfcOwnerHistory_New a ifc:IfcOwnerHistory ; " +
+                       "ifc:owningUser_IfcOwnerHistory inst:IfcPersonAndOrganization_3 ; " +
+                       "ifc:owningApplication_IfcOwnerHistory inst:IfcApplication_1 ; " +
+                       "ifc:changeAction_IfcOwnerHistory ifc:ADDED . " +
+                       "}";
+
+        SparqlUpdateCommandSet updateCommand3 = updateParser.ParseFromString(updateString3);
+
+        // Update processor
+        updateProcessor.ProcessCommandSet(updateCommand3);
+
+        // Test if the third update was performed correctly
+        queryString = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+            "PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> " +
+            "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+            "PREFIX express:  <https://w3id.org/express#> " +
+            "SELECT ?ownerHistory ?owningUser ?owningApplication ?changeAction " +
+            "WHERE { " +
+            "inst:IfcProject_100 ifc:ownerHistory_IfcRoot ?ownerHistory . " +
+            "?ownerHistory rdf:type ifc:IfcOwnerHistory ; " +
+            "              ifc:owningUser_IfcOwnerHistory ?owningUser ; " +
+            "              ifc:owningApplication_IfcOwnerHistory ?owningApplication ; " +
+            "              ifc:changeAction_IfcOwnerHistory ?changeAction . " +
+            "}";
+        query = queryParser.ParseFromString(queryString);
+        results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Print out result for owner history
+        foreach (ISparqlResult t in results)
+        {
+            Console.WriteLine("Query Result after update 3: " + t.ToString(formatter));
+        }
+
+        string updateString4 = @"PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#>
+                PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/>
+                PREFIX express:  <https://w3id.org/express#>
+                PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                PREFIX pset: <http://www.buildingsmart-tech.org/ifcOWL/IFC4/PSD#>
+
+                INSERT DATA {
+                  inst:YourEntity ifc:hasPropertySets inst:YourPropertySet .
+                  inst:YourPropertySet rdf:type ifc:IfcPropertySet ;
+                                     ifc:globalId_IfcRoot inst:YourPropertySetID ;
+                                     ifc:ownerHistory_IfcRoot inst:YourOwnerHistory ;
+                                     ifc:name_IfcRoot ""YourPropertySet"" ;
+                                     ifc:description_IfcProperty ""YourPropertySetDescription"" ;
+                                     ifc:hasProperties inst:YourProperty .
+                  inst:YourProperty rdf:type ifc:IfcPropertySingleValue ;
+                                    ifc:globalId_IfcRoot inst:YourPropertyID ;
+                                    ifc:ownerHistory_IfcRoot inst:YourOwnerHistory ;
+                                    ifc:name_IfcRoot ""YourPropertyName"" ;
+                                    ifc:description_IfcProperty ""YourPropertyDescription"" ;
+                                    ifc:nominalValue_IfcProperty ""YourNominalValue"" .
+}";
+
+        SparqlUpdateCommandSet updateCommand4 = updateParser.ParseFromString(updateString4);
+
+        // Update processor
+        updateProcessor.ProcessCommandSet(updateCommand4);
+
+        queryString = "PREFIX ifc:  <http://standards.buildingsmart.org/IFC/DEV/IFC4/ADD1/OWL#> " +
+                "PREFIX inst:  <http://linkedbuildingdata.net/ifc/resources20200624_184152/> " +
+                "PREFIX express:  <https://w3id.org/express#> " +
+                "PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#> " +
+                "PREFIX pset: <http://www.buildingsmart-tech.org/ifcOWL/IFC4/PSD#> " +
+                "SELECT ?propertySet ?propertySetID ?propertyName ?propertyDescription ?propertyID " +
+                "WHERE { " +
+                "  inst:YourEntity ifc:hasPropertySets ?propertySet . " +
+                "  ?propertySet rdf:type ifc:IfcPropertySet ; " +
+                "               ifc:globalId_IfcRoot ?propertySetID ; " +
+                "               ifc:hasProperties ?property . " +
+                "  ?property rdf:type ifc:IfcPropertySingleValue ; " +
+                "            ifc:name_IfcRoot ?propertyName ; " +
+                "            ifc:globalId_IfcRoot ?propertyID; " +
+                "            ifc:description_IfcProperty ?propertyDescription . " +
+                "}";
+
+        query = queryParser.ParseFromString(queryString);
+        results = (SparqlResultSet)queryProcessor.ProcessQuery(query);
+
+        // Print out result for the newly added property set
+        foreach (ISparqlResult t in results)
+        {
+            Console.WriteLine("Query Result after update 4: " + t.ToString(formatter));
+        }
+    }
+
+    private static void AddWall(string wallId, string wallName)
+    {
+        // Implementation for adding a wall
+    }
+
+    private static void AddPropertySet(string objectId, string propertySetName, string propertyId)
+    {
+        // Implementation for adding a property set
+    }
+
+    private static void AddPropertyToPropertySet(string propertyName, string relatedPropertySetId, string propertyValue)
+    {
+        // Implementation for adding a property to a property set
+    }
+}

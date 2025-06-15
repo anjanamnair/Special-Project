@@ -1,0 +1,55 @@
+using System.Linq;
+using Xbim.Common;
+using Xbim.Ifc;
+using Xbim.Ifc4.Interfaces;
+using Xbim.Ifc4.Kernel;
+using Xbim.Ifc4.ProductExtension;
+using Xbim.Ifc4.PropertyResource;
+using Xbim.Ifc4.SharedBldgElements;
+using Xbim.Ifc4.MeasureResource;
+
+namespace ConsoleApp1
+{
+    public static class Deletion
+    {
+        public static void DeleteWall()
+        {
+            string ifcFilePath = "C:/Users/Anjana/source/repos/ConsoleApp1/SampleHouse4.ifc";
+
+            using (var model = IfcStore.Open(ifcFilePath))
+            {
+                using (var txn = model.BeginTransaction("DeleteWall"))
+                {
+                    try
+                    {
+                        
+                        var wall = model.Instances.OfType<IfcWall>().FirstOrDefault();
+
+                        if (wall != null)
+                        {
+                            
+                            model.Delete(wall);
+
+                          
+                            txn.Commit();
+
+                            Console.WriteLine("Wall entity deleted successfully.");
+                        }
+                        else
+                        {
+                            Console.WriteLine("No IfcWall entity found in the model.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Error deleting wall: {ex.Message}");
+                        txn.RollBack();
+                    }
+                }
+
+                
+                model.SaveAs(ifcFilePath);
+            }
+        }
+    }
+}
